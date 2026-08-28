@@ -1,0 +1,18 @@
+[package]
+name = "rawterm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Raw terminal mode and key/resize event decoding via the crate's own OS FFI (Win32 console API, termios), using only the Rust standard library."
+license = "MIT"
+repository = "https://github.com/nativelite/rawterm-rs"
+keywords = ["terminal", "raw-mode", "tui", "input", "nativelite"]
+categories = ["command-line-interface"]
+
+# nativelite core rule: ZERO third-party dependencies. Do not add to this.
+# (The OS is reached through our own extern blocks, no libc/windows crates.)
+[dependencies]
+
+[lib]
+name = "rawterm"
+path = "src/lib.rs"
