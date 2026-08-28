@@ -170,6 +170,17 @@ impl Terminal {
         self.sys.size()
     }
 
+    /// Read whatever raw input bytes arrive within `timeout`, undecoded.
+    /// Empty result means the wait timed out.
+    ///
+    /// This is the passthrough primitive: a terminal-hosting program (a
+    /// multiplexer) forwards these bytes to a child PTY verbatim, with
+    /// zero decode/re-encode loss. Don't mix with [`read_event`] on the
+    /// same terminal — whichever call runs consumes the bytes.
+    pub fn read_bytes(&mut self, timeout: Duration) -> io::Result<Vec<u8>> {
+        self.sys.read_timeout(timeout)
+    }
+
     /// Wait up to `timeout` (forever if `None`) for the next event. Returns
     /// `Ok(None)` on timeout. Resizes are detected by polling the size at a
     /// small interval while waiting.

@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "rawterm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.70"
 description = "Raw terminal mode and key/resize event decoding via the crate's own OS FFI (Win32 console API, termios), using only the Rust standard library."
