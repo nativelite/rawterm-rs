@@ -41,14 +41,31 @@ extern "system" {
     fn SetConsoleMode(handle: Handle, mode: u32) -> i32;
     fn GetConsoleScreenBufferInfo(handle: Handle, info: *mut ScreenBufferInfo) -> i32;
     fn WaitForSingleObject(handle: Handle, millis: u32) -> u32;
-    fn ReadConsoleW(
+    fn GetNumberOfConsoleInputEvents(handle: Handle, count: *mut u32) -> i32;
+    fn ReadConsoleInputW(
         handle: Handle,
-        buffer: *mut u16,
-        chars_to_read: u32,
-        chars_read: *mut u32,
-        input_control: *mut c_void,
+        buffer: *mut InputRecord,
+        length: u32,
+        read: *mut u32,
     ) -> i32;
 }
+
+/// `INPUT_RECORD` flattened for the `KEY_EVENT` case (20 bytes). Non-key
+/// records reuse the same bytes; we only look at their `event_type`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct InputRecord {
+    event_type: u16,
+    _pad: u16,
+    key_down: i32,
+    repeat_count: u16,
+    virtual_key_code: u16,
+    virtual_scan_code: u16,
+    unicode_char: u16,
+    control_key_state: u32,
+}
+
+const KEY_EVENT: u16 = 0x0001;
 
 const STD_INPUT_HANDLE: u32 = -10i32 as u32;
 const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
@@ -125,31 +142,42 @@ impl Sys {
     }
 
     /// Read whatever input is available within `timeout`, as UTF-8 bytes.
-    /// Empty result means the wait timed out.
+    /// Empty result means the wait timed out (or only non-character events
+    /// arrived — focus, mouse, buffer-size — which are consumed and
+    /// discarded so they can never wedge the wait loop).
     pub fn read_timeout(&mut self, timeout: Duration) -> io::Result<Vec<u8>> {
         let millis = timeout.as_millis().min(u32::MAX as u128) as u32;
         if unsafe { WaitForSingleObject(self.stdin, millis) } != WAIT_OBJECT_0 {
             return Ok(Vec::new());
         }
-        let mut buf = [0u16; 256];
-        let mut read: u32 = 0;
-        let ok = unsafe {
-            ReadConsoleW(
-                self.stdin,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                &mut read,
-                std::ptr::null_mut(),
-            )
-        };
-        if ok == 0 {
+        // The wait signals for ANY input record. Blocking `ReadConsoleW`
+        // here would hang on a focus/mouse event (ConPTY emits focus
+        // records at startup), so read the records themselves and keep
+        // only key-down characters — VT input sequences arrive as those.
+        let mut pending: u32 = 0;
+        if unsafe { GetNumberOfConsoleInputEvents(self.stdin, &mut pending) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        let mut units: Vec<u16> = Vec::with_capacity(read as usize + 1);
+        if pending == 0 {
+            return Ok(Vec::new());
+        }
+        let mut records = [unsafe { std::mem::zeroed::<InputRecord>() }; 128];
+        let want = records.len().min(pending as usize) as u32;
+        let mut read: u32 = 0;
+        if unsafe { ReadConsoleInputW(self.stdin, records.as_mut_ptr(), want, &mut read) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut units: Vec<u16> = Vec::new();
         if let Some(hi) = self.pending_surrogate.take() {
             units.push(hi);
         }
-        units.extend_from_slice(&buf[..read as usize]);
+        for rec in &records[..read as usize] {
+            if rec.event_type == KEY_EVENT && rec.key_down != 0 && rec.unicode_char != 0 {
+                for _ in 0..rec.repeat_count.max(1) {
+                    units.push(rec.unicode_char);
+                }
+            }
+        }
         // Hold a trailing lone high surrogate for the next read.
         if let Some(&last) = units.last() {
             if (0xD800..0xDC00).contains(&last) {
