@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-29
+
+### Added
+- **Mouse input.** Raw mode now captures mouse events and surfaces them as
+  **SGR mouse escape sequences** (`ESC[<Cb;Cx;Cy` then `M`/`m`) inline in the
+  same byte stream `read_bytes` returns, so a passthrough multiplexer forwards
+  clicks exactly like keystrokes.
+  - **Windows:** the console input mode gains `ENABLE_MOUSE_INPUT` and
+    `ENABLE_EXTENDED_FLAGS` and clears `ENABLE_QUICK_EDIT_MODE` (quick-edit
+    would otherwise steal clicks for text selection); the saved-mode restore on
+    drop is unchanged. Binary `MOUSE_EVENT` records are translated to SGR by a
+    pure `encode_mouse` core: left/middle/right press+release (derived from the
+    button-state transition), drag (motion with a button held), wheel up/down,
+    and shift/alt/ctrl modifier folding. Plain motion with no button held is
+    dropped. Unit-tested directly (a live console cannot be injected in CI).
+  - **Unix:** no change — a terminal already delivers SGR mouse as bytes once
+    the app enables mouse mode, and the Unix reader passes raw bytes through.
+- Note: rawterm always *emits* mouse SGR once raw mode is entered. **Gating**
+  (only forwarding mouse to an app that requested `?1000h`/`?1006h`) is the
+  consumer's job (e.g. amux tracks the pane's mouse mode) — out of scope here.
+
 ## [0.1.0] - 2026-08-28
 
 ### Added
@@ -37,5 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Third crate in the nativelite **agent terminal** suite (see
 `roadmap/agent-terminal-suite.md` in `nativelite/ops`).
 
-[Unreleased]: https://github.com/nativelite/rawterm-rs/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nativelite/rawterm-rs/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nativelite/rawterm-rs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nativelite/rawterm-rs/releases/tag/v0.1.0

@@ -3,10 +3,19 @@
 //! `ENABLE_VIRTUAL_TERMINAL_INPUT` (keys arrive as VT escape sequences,
 //! which the shared [`Decoder`](crate::Decoder) understands) and output
 //! gains `ENABLE_VIRTUAL_TERMINAL_PROCESSING` so ANSI bytes render.
+//!
+//! Mouse input is enabled too (`ENABLE_MOUSE_INPUT`, quick-edit cleared) and
+//! the console's binary `MOUSE_EVENT` records are translated to SGR mouse
+//! escape sequences ([`encode_mouse`]) so they ride the same byte stream as
+//! keys — a passthrough multiplexer forwards clicks exactly like keystrokes.
 
 use std::ffi::c_void;
 use std::io;
 use std::time::Duration;
+
+#[path = "mouse.rs"]
+mod mouse;
+use mouse::{encode_mouse, MouseRecord};
 
 type Handle = *mut c_void;
 
@@ -50,13 +59,11 @@ extern "system" {
     ) -> i32;
 }
 
-/// `INPUT_RECORD` flattened for the `KEY_EVENT` case (20 bytes). Non-key
-/// records reuse the same bytes; we only look at their `event_type`.
+/// The `KEY_EVENT_RECORD` body (everything after the `event_type` + pad
+/// header). 16 bytes.
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct InputRecord {
-    event_type: u16,
-    _pad: u16,
+struct KeyRecord {
     key_down: i32,
     repeat_count: u16,
     virtual_key_code: u16,
@@ -65,7 +72,36 @@ struct InputRecord {
     control_key_state: u32,
 }
 
+/// The `INPUT_RECORD.Event` union, restricted to the two variants we read.
+/// Both bodies fit the same 16 bytes that follow the record header; the
+/// active variant is chosen by `InputRecord::event_type`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+union EventBody {
+    key: KeyRecord,
+    mouse: MouseRecord,
+}
+
+/// `INPUT_RECORD`: a 4-byte header (`EventType` + alignment pad) followed by
+/// the tagged [`EventBody`] union. We read only `KEY_EVENT` and `MOUSE_EVENT`
+/// variants; other records are ignored via `event_type`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct InputRecord {
+    event_type: u16,
+    _pad: u16,
+    event: EventBody,
+}
+
 const KEY_EVENT: u16 = 0x0001;
+const MOUSE_EVENT: u16 = 0x0002;
+
+// The union overlay is only sound if both bodies match the real Win32
+// `INPUT_RECORD.Event` size (16 bytes). Pin it at compile time so a stray
+// field edit can never silently misread the console buffer.
+const _: () = assert!(std::mem::size_of::<KeyRecord>() == 16);
+const _: () = assert!(std::mem::size_of::<MouseRecord>() == 16);
+const _: () = assert!(std::mem::size_of::<InputRecord>() == 20);
 
 const STD_INPUT_HANDLE: u32 = -10i32 as u32;
 const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
@@ -74,6 +110,9 @@ const INVALID_HANDLE: Handle = -1isize as Handle;
 const ENABLE_PROCESSED_INPUT: u32 = 0x0001;
 const ENABLE_LINE_INPUT: u32 = 0x0002;
 const ENABLE_ECHO_INPUT: u32 = 0x0004;
+const ENABLE_MOUSE_INPUT: u32 = 0x0010;
+const ENABLE_QUICK_EDIT_MODE: u32 = 0x0040;
+const ENABLE_EXTENDED_FLAGS: u32 = 0x0080;
 const ENABLE_VIRTUAL_TERMINAL_INPUT: u32 = 0x0200;
 
 const ENABLE_PROCESSED_OUTPUT: u32 = 0x0001;
@@ -88,6 +127,9 @@ pub struct Sys {
     saved_out: u32,
     /// A high surrogate held until its low half arrives in the next read.
     pending_surrogate: Option<u16>,
+    /// Previous console mouse-button bitmask, so a press vs. release can be
+    /// derived from the state transition between consecutive mouse records.
+    prev_buttons: u32,
 }
 
 impl Sys {
@@ -96,8 +138,17 @@ impl Sys {
         let stdout = std_handle(STD_OUTPUT_HANDLE)?;
         let saved_in = console_mode(stdin)?;
         let saved_out = console_mode(stdout)?;
-        let raw_in = (saved_in & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT))
-            | ENABLE_VIRTUAL_TERMINAL_INPUT;
+        // Enable mouse input and clear quick-edit (which would otherwise steal
+        // clicks for text selection). ENABLE_EXTENDED_FLAGS must accompany a
+        // quick-edit change for the console to honor it.
+        let raw_in = (saved_in
+            & !(ENABLE_ECHO_INPUT
+                | ENABLE_LINE_INPUT
+                | ENABLE_PROCESSED_INPUT
+                | ENABLE_QUICK_EDIT_MODE))
+            | ENABLE_VIRTUAL_TERMINAL_INPUT
+            | ENABLE_MOUSE_INPUT
+            | ENABLE_EXTENDED_FLAGS;
         let raw_out = saved_out | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
         set_mode(stdin, raw_in)?;
         if let Err(e) = set_mode(stdout, raw_out) {
@@ -110,6 +161,7 @@ impl Sys {
             saved_in,
             saved_out,
             pending_surrogate: None,
+            prev_buttons: 0,
         })
     }
 
@@ -141,10 +193,12 @@ impl Sys {
         Ok((rows, cols))
     }
 
-    /// Read whatever input is available within `timeout`, as UTF-8 bytes.
-    /// Empty result means the wait timed out (or only non-character events
-    /// arrived — focus, mouse, buffer-size — which are consumed and
-    /// discarded so they can never wedge the wait loop).
+    /// Read whatever input is available within `timeout`, as bytes. Key
+    /// records become their UTF-8 characters and mouse records become SGR
+    /// mouse escape sequences ([`encode_mouse`]), interleaved in stream
+    /// order. Empty result means the wait timed out (or only events we do
+    /// not surface — focus, buffer-size, plain mouse motion — arrived; they
+    /// are consumed so they can never wedge the wait loop).
     pub fn read_timeout(&mut self, timeout: Duration) -> io::Result<Vec<u8>> {
         let millis = timeout.as_millis().min(u32::MAX as u128) as u32;
         if unsafe { WaitForSingleObject(self.stdin, millis) } != WAIT_OBJECT_0 {
@@ -167,31 +221,64 @@ impl Sys {
         if unsafe { ReadConsoleInputW(self.stdin, records.as_mut_ptr(), want, &mut read) } == 0 {
             return Err(io::Error::last_os_error());
         }
+        let mut out: Vec<u8> = Vec::new();
+        // UTF-16 units from key records, buffered so surrogate pairs stay
+        // whole across records; flushed to `out` (as UTF-8) in stream order
+        // whenever a mouse record has to be emitted between keystrokes.
+        // A high surrogate held from the previous read is re-attached by the
+        // first `flush_units` (it drains `self.pending_surrogate`).
         let mut units: Vec<u16> = Vec::new();
-        if let Some(hi) = self.pending_surrogate.take() {
-            units.push(hi);
-        }
         for rec in &records[..read as usize] {
-            if rec.event_type == KEY_EVENT && rec.key_down != 0 && rec.unicode_char != 0 {
-                for _ in 0..rec.repeat_count.max(1) {
-                    units.push(rec.unicode_char);
+            match rec.event_type {
+                // SAFETY: event_type == KEY_EVENT, so the union's `key` body
+                // is the active variant per the Win32 INPUT_RECORD contract.
+                KEY_EVENT => {
+                    let key = unsafe { rec.event.key };
+                    if key.key_down != 0 && key.unicode_char != 0 {
+                        for _ in 0..key.repeat_count.max(1) {
+                            units.push(key.unicode_char);
+                        }
+                    }
                 }
+                // SAFETY: event_type == MOUSE_EVENT, so the union's `mouse`
+                // body is the active variant per the Win32 INPUT_RECORD
+                // contract.
+                MOUSE_EVENT => {
+                    let mouse = unsafe { rec.event.mouse };
+                    if let Some(seq) = encode_mouse(&mouse, &mut self.prev_buttons) {
+                        flush_units(&mut units, &mut out, &mut self.pending_surrogate);
+                        out.extend_from_slice(&seq);
+                    }
+                }
+                _ => {}
             }
         }
-        // Hold a trailing lone high surrogate for the next read.
-        if let Some(&last) = units.last() {
-            if (0xD800..0xDC00).contains(&last) {
-                self.pending_surrogate = Some(last);
-                units.pop();
-            }
-        }
-        let mut out = Vec::with_capacity(units.len() * 3);
-        for ch in char::decode_utf16(units.into_iter()) {
-            let ch = ch.unwrap_or('\u{FFFD}');
-            let mut b = [0u8; 4];
-            out.extend_from_slice(ch.encode_utf8(&mut b).as_bytes());
-        }
+        flush_units(&mut units, &mut out, &mut self.pending_surrogate);
         Ok(out)
+    }
+}
+
+/// Convert buffered UTF-16 `units` to UTF-8, appending to `out`. A trailing
+/// lone high surrogate is not emitted; it is stashed in `pending` to be
+/// prepended to the next batch (a surrogate pair can span two key records —
+/// or, if a mouse record forced a flush between the halves, two flushes).
+fn flush_units(units: &mut Vec<u16>, out: &mut Vec<u8>, pending: &mut Option<u16>) {
+    // Re-attach a surrogate held from a prior flush so its low half (if it
+    // arrives now) still pairs correctly.
+    if let Some(hi) = pending.take() {
+        units.insert(0, hi);
+    }
+    if let Some(&last) = units.last() {
+        if (0xD800..0xDC00).contains(&last) {
+            *pending = Some(last);
+            units.pop();
+        }
+    }
+    out.reserve(units.len() * 3);
+    for ch in char::decode_utf16(units.drain(..)) {
+        let ch = ch.unwrap_or('\u{FFFD}');
+        let mut b = [0u8; 4];
+        out.extend_from_slice(ch.encode_utf8(&mut b).as_bytes());
     }
 }
 
