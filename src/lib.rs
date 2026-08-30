@@ -170,6 +170,15 @@ impl Terminal {
         self.sys.size()
     }
 
+    /// Toggle mouse capture. **Off by default** so the user keeps native
+    /// drag-to-select / copy. Turning it `on` makes clicks arrive as SGR mouse
+    /// sequences in [`read_bytes`] (at the cost of plain selection, which then
+    /// needs the terminal's Shift-drag override) — a host enables it only when
+    /// it consumes clicks (e.g. click-to-focus a pane). Idempotent.
+    pub fn set_mouse(&mut self, on: bool) -> io::Result<()> {
+        self.sys.set_mouse(on)
+    }
+
     /// Read whatever raw input bytes arrive within `timeout`, undecoded.
     /// Empty result means the wait timed out.
     ///

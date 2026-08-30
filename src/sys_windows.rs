@@ -138,17 +138,12 @@ impl Sys {
         let stdout = std_handle(STD_OUTPUT_HANDLE)?;
         let saved_in = console_mode(stdin)?;
         let saved_out = console_mode(stdout)?;
-        // Enable mouse input and clear quick-edit (which would otherwise steal
-        // clicks for text selection). ENABLE_EXTENDED_FLAGS must accompany a
-        // quick-edit change for the console to honor it.
-        let raw_in = (saved_in
-            & !(ENABLE_ECHO_INPUT
-                | ENABLE_LINE_INPUT
-                | ENABLE_PROCESSED_INPUT
-                | ENABLE_QUICK_EDIT_MODE))
-            | ENABLE_VIRTUAL_TERMINAL_INPUT
-            | ENABLE_MOUSE_INPUT
-            | ENABLE_EXTENDED_FLAGS;
+        // Default to **selection-friendly**: keep quick-edit ON so the user can
+        // drag-select and copy text, and do NOT enable mouse input (which would
+        // steal clicks and disable quick-edit). Mouse capture is opt-in via
+        // [`Sys::set_mouse`] — a host turns it on only when it actually consumes
+        // clicks (e.g. amux's click-to-focus), where the trade-off is worth it.
+        let raw_in = input_mode(saved_in, false);
         let raw_out = saved_out | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
         set_mode(stdin, raw_in)?;
         if let Err(e) = set_mode(stdout, raw_out) {
@@ -170,6 +165,15 @@ impl Sys {
             SetConsoleMode(self.stdin, self.saved_in);
             SetConsoleMode(self.stdout, self.saved_out);
         }
+    }
+
+    /// Toggle mouse capture at runtime. `true` clears quick-edit and enables
+    /// mouse input (clicks arrive as SGR sequences via [`read_bytes`], but the
+    /// user loses drag-to-select); `false` restores quick-edit selection and
+    /// stops mouse capture. Lets a host offer a "mouse mode" the user turns on
+    /// only when they want click navigation.
+    pub fn set_mouse(&mut self, on: bool) -> io::Result<()> {
+        set_mode(self.stdin, input_mode(self.saved_in, on))
     }
 
     pub fn size(&self) -> io::Result<(u16, u16)> {
@@ -309,4 +313,23 @@ fn set_mode(h: Handle, mode: u32) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+/// The raw input console mode derived from the `saved` mode, with mouse capture
+/// on or off. Common to `enter` and [`Sys::set_mouse`] so the two can never
+/// drift. `ENABLE_EXTENDED_FLAGS` must accompany any quick-edit change for the
+/// console to honor it.
+fn input_mode(saved: u32, mouse: bool) -> u32 {
+    let base = (saved
+        & !(ENABLE_ECHO_INPUT
+            | ENABLE_LINE_INPUT
+            | ENABLE_PROCESSED_INPUT
+            | ENABLE_QUICK_EDIT_MODE))
+        | ENABLE_VIRTUAL_TERMINAL_INPUT
+        | ENABLE_EXTENDED_FLAGS;
+    if mouse {
+        base | ENABLE_MOUSE_INPUT
+    } else {
+        base | ENABLE_QUICK_EDIT_MODE
+    }
 }

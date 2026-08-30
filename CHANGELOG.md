@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-30
+
+### Changed
+- **Mouse capture is now opt-in; text selection works by default.** `raw()`
+  previously cleared `ENABLE_QUICK_EDIT_MODE` and enabled `ENABLE_MOUSE_INPUT`
+  unconditionally, which disabled the console's native drag-to-select — so a
+  host user could not select/copy text. `raw()` now keeps quick-edit **on** and
+  does not capture the mouse; a host opts in with the new **`Terminal::set_mouse(on)`**
+  only when it actually consumes clicks. (Unix backend gains the same toggle via
+  xterm SGR mouse sequences.)
+
+### Added
+- **`Terminal::set_mouse(on: bool)`** — toggle mouse capture at runtime.
+
 ## [0.2.0] - 2026-08-29
 
 ### Added

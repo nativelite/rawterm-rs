@@ -158,6 +158,22 @@ impl Sys {
         }
     }
 
+    /// Toggle xterm SGR mouse reporting. Off by default (so drag-to-select /
+    /// copy works); `true` enables it (clicks then arrive as SGR sequences in
+    /// the input stream, `false` disables it again). Mirrors the Windows
+    /// backend's opt-in mouse capture.
+    pub fn set_mouse(&mut self, on: bool) -> io::Result<()> {
+        use std::io::Write;
+        let seq: &[u8] = if on {
+            b"\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+        } else {
+            b"\x1b[?1000l\x1b[?1002l\x1b[?1006l"
+        };
+        let mut out = std::io::stdout();
+        out.write_all(seq)?;
+        out.flush()
+    }
+
     pub fn size(&self) -> io::Result<(u16, u16)> {
         let mut ws = WinSize {
             ws_row: 0,
