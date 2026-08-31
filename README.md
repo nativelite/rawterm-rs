@@ -55,8 +55,8 @@ Per platform, in our own FFI:
   records are translated to SGR, interleaved in stream order.
 - **Unix** (the platform's always-present C library): classic termios raw
   mode, `poll` + `read` for timeouts (no signal handlers), and
-  `ioctl(TIOCGWINSZ)` for size. Linux is CI-verified; macOS carries the
-  standard BSD constants and compiles, but is not yet CI-exercised.
+  `ioctl(TIOCGWINSZ)` for size. The suite passes on Linux (run it locally);
+  macOS carries the standard BSD constants and compiles, but isn't exercised yet.
 
 Resizes are detected by polling the size at a short interval while waiting
 for input — no SIGWINCH handler, so the crate installs nothing global.
@@ -103,7 +103,7 @@ a clear error and configures nothing. All three OS modules compile-check
 ## Development
 
 ```bash
-python dev.py check   # zero-dependency guard + cargo test (what CI runs)
+python dev.py check   # zero-dependency guard + cargo test (the pre-push gate)
 python dev.py test    # cargo test
 python dev.py fmt     # cargo fmt --check
 python dev.py guard   # zero-dependency guard
