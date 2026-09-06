@@ -142,7 +142,7 @@ impl Sys {
         // drag-select and copy text, and do NOT enable mouse input (which would
         // steal clicks and disable quick-edit). Mouse capture is opt-in via
         // [`Sys::set_mouse`]: a host turns it on only when it actually consumes
-        // clicks (e.g. amux's click-to-focus), where the trade-off is worth it.
+        // clicks (e.g. atrium's click-to-focus), where the trade-off is worth it.
         let raw_in = input_mode(saved_in, false);
         let raw_out = saved_out | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
         set_mode(stdin, raw_in)?;

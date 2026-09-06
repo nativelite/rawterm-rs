@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the app enables mouse mode, and the Unix reader passes raw bytes through.
 - Note: rawterm always *emits* mouse SGR once raw mode is entered. **Gating**
   (only forwarding mouse to an app that requested `?1000h`/`?1006h`) is the
-  consumer's job (e.g. amux tracks the pane's mouse mode); out of scope here.
+  consumer's job (e.g. atrium tracks the pane's mouse mode); out of scope here.
 
 ## [0.1.0] - 2026-08-28
 

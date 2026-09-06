@@ -81,7 +81,7 @@ enables mouse mode, so the reader just passes them through, no translation.
 > reporting. A multiplexer that forwards these bytes to a child should gate them
 > on the pane's own mouse mode (`ESC[?1000h` / `ESC[?1006h` on, `…l` off) so an
 > app that never requested mouse doesn't receive stray click bytes. That
-> tracking lives in the consumer (e.g. amux), not here.
+> tracking lives in the consumer (e.g. atrium), not here.
 
 ## What's deliberately out of scope
 
