@@ -1,4 +1,4 @@
-//! Integration tests for `rawterm`'s pure decoder — the part that needs no
+//! Integration tests for `rawterm`'s pure decoder: the part that needs no
 //! terminal. Fixture sequences are verified fed one-shot and byte-at-a-time
 //! (chunk boundaries can split escapes and UTF-8 anywhere), lone-ESC
 //! ambiguity is resolved only by `flush`, and bracketed paste survives
