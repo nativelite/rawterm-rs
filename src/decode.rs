@@ -3,7 +3,7 @@
 //! No I/O here: [`Decoder::feed`] takes whatever bytes arrived (chunks may
 //! split an escape sequence or a UTF-8 character anywhere) and returns the
 //! events completed so far; unfinished input is buffered. A lone `ESC` is
-//! ambiguous — the Esc key and the start of a sequence look identical — so
+//! ambiguous (the Esc key and the start of a sequence look identical), so
 //! it is *not* resolved by `feed`; the caller decides when no continuation
 //! is coming and calls [`Decoder::flush`] (the `Terminal` does this after a
 //! short grace period).

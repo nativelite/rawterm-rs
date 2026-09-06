@@ -1,5 +1,5 @@
 //! The Unix edge: our own `extern "C"` declarations against the platform's
-//! always-present C library — no `libc` crate. Raw mode is classic termios;
+//! always-present C library, no `libc` crate. Raw mode is classic termios;
 //! reads use `poll` + `read` so timeouts need no signals; size comes from
 //! `ioctl(TIOCGWINSZ)`.
 //!

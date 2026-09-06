@@ -1,4 +1,4 @@
-//! rawterm — raw terminal mode and key/resize events, on the Rust standard
+//! rawterm: raw terminal mode and key/resize events, on the Rust standard
 //! library alone. Zero dependencies, including no `libc` or `windows` crates:
 //! the OS boundary is this crate's own small, audited `extern` blocks
 //! (termios/`poll` on Unix, the Win32 console API on Windows).
@@ -8,10 +8,10 @@
 //! * [`Decoder`] is **pure bytes → events** and works anywhere: feed it the
 //!   byte stream a terminal in raw+VT-input mode produces (chunks may split
 //!   an escape sequence or a UTF-8 character anywhere) and it yields
-//!   [`Event`]s — keys with modifiers, and bracketed paste.
+//!   [`Event`]s: keys with modifiers, and bracketed paste.
 //! * [`Terminal`] is the **thin OS edge**: enter raw mode (saving prior
 //!   state), read input with a timeout, query the size, and restore the
-//!   terminal on drop — including on panic, since restoration runs in `Drop`.
+//!   terminal on drop, including on panic, since restoration runs in `Drop`.
 //!
 //! ```
 //! use rawterm::{Decoder, Event, Key};
@@ -22,7 +22,7 @@
 //! assert_eq!(events[1], Event::key(Key::Right).ctrl()); // Ctrl+Right
 //! ```
 //!
-//! Rendering is not here — build output bytes with the `ansi` crate (or by
+//! Rendering is not here; build output bytes with the `ansi` crate (or by
 //! hand) and write them to stdout yourself. PTYs are not here either; that
 //! is the `pty` crate's concern.
 
@@ -173,7 +173,7 @@ impl Terminal {
     /// Toggle mouse capture. **Off by default** so the user keeps native
     /// drag-to-select / copy. Turning it `on` makes clicks arrive as SGR mouse
     /// sequences in [`read_bytes`] (at the cost of plain selection, which then
-    /// needs the terminal's Shift-drag override) — a host enables it only when
+    /// needs the terminal's Shift-drag override); a host enables it only when
     /// it consumes clicks (e.g. click-to-focus a pane). Idempotent.
     pub fn set_mouse(&mut self, on: bool) -> io::Result<()> {
         self.sys.set_mouse(on)
@@ -185,7 +185,7 @@ impl Terminal {
     /// This is the passthrough primitive: a terminal-hosting program (a
     /// multiplexer) forwards these bytes to a child PTY verbatim, with
     /// zero decode/re-encode loss. Don't mix with [`read_event`] on the
-    /// same terminal — whichever call runs consumes the bytes.
+    /// same terminal; whichever call runs consumes the bytes.
     pub fn read_bytes(&mut self, timeout: Duration) -> io::Result<Vec<u8>> {
         self.sys.read_timeout(timeout)
     }

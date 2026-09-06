@@ -12,14 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Mouse capture is now opt-in; text selection works by default.** `raw()`
   previously cleared `ENABLE_QUICK_EDIT_MODE` and enabled `ENABLE_MOUSE_INPUT`
-  unconditionally, which disabled the console's native drag-to-select — so a
+  unconditionally, which disabled the console's native drag-to-select, so a
   host user could not select/copy text. `raw()` now keeps quick-edit **on** and
   does not capture the mouse; a host opts in with the new **`Terminal::set_mouse(on)`**
   only when it actually consumes clicks. (Unix backend gains the same toggle via
   xterm SGR mouse sequences.)
 
 ### Added
-- **`Terminal::set_mouse(on: bool)`** — toggle mouse capture at runtime.
+- **`Terminal::set_mouse(on: bool)`**: toggle mouse capture at runtime.
 
 ## [0.2.0] - 2026-08-29
 
@@ -36,16 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     button-state transition), drag (motion with a button held), wheel up/down,
     and shift/alt/ctrl modifier folding. Plain motion with no button held is
     dropped. Unit-tested directly (a live console cannot be injected in CI).
-  - **Unix:** no change — a terminal already delivers SGR mouse as bytes once
+  - **Unix:** no change; a terminal already delivers SGR mouse as bytes once
     the app enables mouse mode, and the Unix reader passes raw bytes through.
 - Note: rawterm always *emits* mouse SGR once raw mode is entered. **Gating**
   (only forwarding mouse to an app that requested `?1000h`/`?1006h`) is the
-  consumer's job (e.g. amux tracks the pane's mouse mode) — out of scope here.
+  consumer's job (e.g. amux tracks the pane's mouse mode); out of scope here.
 
 ## [0.1.0] - 2026-08-28
 
 ### Added
-- `Decoder` — pure, incremental bytes→events decoding for raw+VT-input
+- `Decoder`: pure, incremental bytes→events decoding for raw+VT-input
   terminals: printable/UTF-8 chars, Ctrl+letter controls, arrows,
   Home/End/PgUp/PgDn/Ins/Del, F1–F12 (SS3 and CSI), xterm modifier
   parameters, Alt via ESC prefix, and bracketed paste that survives chunk
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sizes are bounded.
 - `Event` / `KeyEvent` / `Key` / `Mods` types with builder-style modifier
   helpers.
-- `Terminal` — enter raw mode saving prior state; `read_event(timeout)`
+- `Terminal`: enter raw mode saving prior state; `read_event(timeout)`
   with resize detection by size polling (no global signal handlers);
   `size()`; full restore in `Drop`, panic included; clean error (nothing
   configured) when stdin/stdout is not a terminal.

@@ -1,5 +1,5 @@
 //! The Windows edge: our own `extern "system"` declarations against
-//! kernel32 — no `windows`/`winapi` crates. Raw input is achieved with
+//! kernel32, no `windows`/`winapi` crates. Raw input is achieved with
 //! `ENABLE_VIRTUAL_TERMINAL_INPUT` (keys arrive as VT escape sequences,
 //! which the shared [`Decoder`](crate::Decoder) understands) and output
 //! gains `ENABLE_VIRTUAL_TERMINAL_PROCESSING` so ANSI bytes render.
@@ -7,7 +7,7 @@
 //! Mouse input is enabled too (`ENABLE_MOUSE_INPUT`, quick-edit cleared) and
 //! the console's binary `MOUSE_EVENT` records are translated to SGR mouse
 //! escape sequences ([`encode_mouse`]) so they ride the same byte stream as
-//! keys — a passthrough multiplexer forwards clicks exactly like keystrokes.
+//! keys, so a passthrough multiplexer forwards clicks exactly like keystrokes.
 
 use std::ffi::c_void;
 use std::io;
@@ -141,7 +141,7 @@ impl Sys {
         // Default to **selection-friendly**: keep quick-edit ON so the user can
         // drag-select and copy text, and do NOT enable mouse input (which would
         // steal clicks and disable quick-edit). Mouse capture is opt-in via
-        // [`Sys::set_mouse`] — a host turns it on only when it actually consumes
+        // [`Sys::set_mouse`]: a host turns it on only when it actually consumes
         // clicks (e.g. amux's click-to-focus), where the trade-off is worth it.
         let raw_in = input_mode(saved_in, false);
         let raw_out = saved_out | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
@@ -201,7 +201,7 @@ impl Sys {
     /// records become their UTF-8 characters and mouse records become SGR
     /// mouse escape sequences ([`encode_mouse`]), interleaved in stream
     /// order. Empty result means the wait timed out (or only events we do
-    /// not surface — focus, buffer-size, plain mouse motion — arrived; they
+    /// not surface (focus, buffer-size, plain mouse motion) arrived; they
     /// are consumed so they can never wedge the wait loop).
     pub fn read_timeout(&mut self, timeout: Duration) -> io::Result<Vec<u8>> {
         let millis = timeout.as_millis().min(u32::MAX as u128) as u32;
@@ -211,7 +211,7 @@ impl Sys {
         // The wait signals for ANY input record. Blocking `ReadConsoleW`
         // here would hang on a focus/mouse event (ConPTY emits focus
         // records at startup), so read the records themselves and keep
-        // only key-down characters — VT input sequences arrive as those.
+        // only key-down characters; VT input sequences arrive as those.
         let mut pending: u32 = 0;
         if unsafe { GetNumberOfConsoleInputEvents(self.stdin, &mut pending) } == 0 {
             return Err(io::Error::last_os_error());
@@ -264,7 +264,7 @@ impl Sys {
 
 /// Convert buffered UTF-16 `units` to UTF-8, appending to `out`. A trailing
 /// lone high surrogate is not emitted; it is stashed in `pending` to be
-/// prepended to the next batch (a surrogate pair can span two key records —
+/// prepended to the next batch (a surrogate pair can span two key records,
 /// or, if a mouse record forced a flush between the halves, two flushes).
 fn flush_units(units: &mut Vec<u16>, out: &mut Vec<u8>, pending: &mut Option<u16>) {
     // Re-attach a surrogate held from a prior flush so its low half (if it
